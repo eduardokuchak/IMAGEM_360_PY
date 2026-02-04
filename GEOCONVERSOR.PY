@@ -14,10 +14,11 @@ import shutil
 try:
     import geopandas as gpd
     import pandas as pd
+    import fiona
     HAS_GEOPANDAS = True
 except ImportError:
     HAS_GEOPANDAS = False
-    print("❌ ERRO: Geopandas não encontrado.")
+    print("❌ AVISO: Bibliotecas Geopandas/Fiona não encontradas. O backend falhará.")
 
 PORT = 8000
 
@@ -31,117 +32,171 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>GeoConversor V6 - Batch</title>
+    <title>GeoConversor V11 - Final</title>
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .container { background: #1e1e1e; width: 500px; padding: 40px; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.6); text-align: center; border: 1px solid #333; }
-        h1 { color: #9b59b6; margin: 0 0 10px 0; font-size: 26px; letter-spacing: 1px; }
-        p { color: #888; font-size: 14px; margin-bottom: 20px; }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; background: #0a0a0a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .container { background: #111; width: 680px; padding: 40px; border-radius: 12px; box-shadow: 0 0 50px rgba(0,255,100,0.1); text-align: center; border: 1px solid #333; }
+        h1 { color: #00ff88; margin: 0 0 10px 0; font-size: 32px; letter-spacing: 1px; }
+        p { color: #888; font-size: 14px; margin-bottom: 30px; }
         
-        .drop-zone { border: 2px dashed #444; border-radius: 12px; padding: 30px 20px; background: #181818; cursor: pointer; transition: 0.3s; position: relative; }
-        .drop-zone:hover, .drop-zone.dragover { border-color: #9b59b6; background: #222; }
-        .drop-zone span { font-size: 40px; display: block; margin-bottom: 10px; opacity: 0.8; }
-        .file-list { margin-top: 10px; font-size: 13px; color: #2ecc71; text-align: left; max-height: 80px; overflow-y: auto; }
+        .drop-zone { border: 2px dashed #444; border-radius: 10px; padding: 40px; background: #0f0f0f; cursor: pointer; transition: 0.2s; }
+        .drop-zone:hover { border-color: #00ff88; background: #1a1a1a; }
+        .drop-zone.dragover { border-color: #fff; background: #222; }
         
-        select { width: 100%; padding: 12px; margin-top: 20px; background: #252525; border: 1px solid #444; color: white; border-radius: 8px; font-size: 14px; outline: none; cursor: pointer; }
+        .btn-group { display: flex; gap: 15px; justify-content: center; margin-top: 25px; }
+        .btn-select { background: #222; border: 1px solid #444; padding: 12px 25px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #fff; transition: 0.2s; }
+        .btn-select:hover { background: #333; border-color: #00ff88; }
         
-        /* CHECKBOX ESTILIZADO */
-        .checkbox-wrapper { margin-top: 20px; display: flex; align-items: center; justify-content: flex-start; background: #252525; padding: 10px; border-radius: 8px; border: 1px solid #444; }
-        .checkbox-wrapper input { width: 20px; height: 20px; cursor: pointer; accent-color: #9b59b6; margin-right: 10px; }
-        .checkbox-wrapper label { cursor: pointer; font-size: 14px; color: #ddd; user-select: none; }
-
-        button { width: 100%; padding: 16px; margin-top: 20px; background: #9b59b6; border: none; color: white; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 16px; transition: 0.2s; box-shadow: 0 4px 15px rgba(155, 89, 182, 0.3); }
-        button:hover { background: #8e44ad; transform: translateY(-2px); }
-        button:disabled { background: #444; cursor: not-allowed; }
+        #fileList { margin-top: 20px; text-align: left; font-size: 13px; color: #00ff88; max-height: 150px; overflow-y: auto; background: #000; padding: 10px; border: 1px solid #333; display: none; }
         
-        .status { margin-top: 20px; font-size: 14px; min-height: 20px; font-weight: 500; }
-        .error { color: #e74c3c; } .success { color: #2ecc71; }
+        select { width: 100%; padding: 15px; margin-top: 25px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; outline: none; }
+        
+        button.convert { width: 100%; padding: 20px; margin-top: 25px; background: #00ff88; border: none; color: #000; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 18px; text-transform: uppercase; }
+        button.convert:hover { background: #00cc6a; }
+        button.convert:disabled { background: #333; color: #555; cursor: not-allowed; }
+        
+        #status { margin-top: 20px; font-weight: bold; min-height: 20px; }
+        .error { color: #ff5555; } .success { color: #00ff88; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>⚡ GeoConversor V6</h1>
-        <p>Conversão em Lote ou Unificada</p>
+        <h1>🚀 GeoConversor V11</h1>
+        <p>Suporte Total: MDB, SHP e Pastas (Sem Erros de JS)</p>
         
         <input type="file" id="fileInput" style="display: none;" multiple>
-        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-            <span>📂</span>
-            <div id="dropText">Arraste seus arquivos aqui</div>
-            <div id="fileList" class="file-list"></div>
+        <input type="file" id="folderInput" style="display: none;" webkitdirectory directory multiple>
+        
+        <div id="dropZone" class="drop-zone">
+            <div style="font-size: 50px; margin-bottom: 10px;">📂</div>
+            <div id="dropText">Arraste Arquivos ou Pastas aqui</div>
+            
+            <div class="btn-group">
+                <button class="btn-select" onclick="document.getElementById('fileInput').click()">Selecionar Arquivos</button>
+                <button class="btn-select" onclick="document.getElementById('folderInput').click()">Selecionar Pasta</button>
+            </div>
+            
+            <div id="fileList"></div>
         </div>
         
         <select id="formatSelect">
-            <option value="csv">Excel (Separado por Colunas)</option>
-            <option value="dxf">DXF (AutoCAD) - Apenas Desenho</option>
+            <option value="shp">Shapefile (ZIP)</option>
+            <option value="dxf">DXF (AutoCAD) - Limpo</option>
+            <option value="xlsx">Excel .XLSX</option>
             <option value="kml">KML (Google Earth)</option>
             <option value="geojson">GeoJSON</option>
-            <option value="shp">Shapefile (ZIP)</option>
+            <option value="gpkg">GeoPackage</option>
+            <option value="csv">CSV (Excel)</option>
         </select>
-
-        <div class="checkbox-wrapper">
-            <input type="checkbox" id="batchMode">
-            <label for="batchMode">Processar em Lote (Manter arquivos separados)</label>
-        </div>
         
-        <button id="btnConvert" onclick="uploadAndConvert()">Converter</button>
-        <div id="status" class="status"></div>
+        <button id="btnConvert" class="convert" onclick="uploadAndConvert()">Iniciar Conversão</button>
+        <div id="status"></div>
     </div>
 
     <script>
+        // Elementos
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
+        const folderInput = document.getElementById('folderInput');
         const fileListDisplay = document.getElementById('fileList');
+        const statusDiv = document.getElementById('status');
         let selectedFiles = [];
 
-        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
-        fileInput.addEventListener('change', (e) => handleFiles(fileInput.files));
+        // Drag & Drop Simplificado e Robusto
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', function(e) {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        // Inputs normais
+        fileInput.addEventListener('change', function() { handleFiles(fileInput.files); });
+        folderInput.addEventListener('change', function() { handleFiles(folderInput.files); });
 
         function handleFiles(files) {
-            selectedFiles = files; fileListDisplay.innerHTML = "";
-            if (files.length > 0) {
-                document.getElementById('dropText').style.display = 'none';
-                for (let i = 0; i < files.length; i++) {
-                    const div = document.createElement("div"); div.className = "file-item"; div.innerText = "📄 " + files[i].name; fileListDisplay.appendChild(div);
-                }
+            if (!files || files.length === 0) return;
+            selectedFiles = files;
+            
+            fileListDisplay.style.display = 'block';
+            fileListDisplay.innerHTML = `<strong>${files.length} itens prontos para envio.</strong><br>`;
+            
+            const limit = Math.min(files.length, 10);
+            for (let i = 0; i < limit; i++) {
+                // webkitRelativePath é usado para pastas, name para arquivos soltos
+                let name = files[i].webkitRelativePath || files[i].name;
+                fileListDisplay.innerHTML += `<div>📄 ${name}</div>`;
+            }
+            if (files.length > 10) {
+                fileListDisplay.innerHTML += `<div>... e mais ${files.length - 10} arquivos.</div>`;
             }
         }
 
         async function uploadAndConvert() {
-            if (selectedFiles.length === 0) { setStatus("⚠️ Selecione arquivos!", "error"); return; }
+            if (selectedFiles.length === 0) {
+                statusDiv.innerHTML = "<span class='error'>⚠️ Selecione arquivos primeiro!</span>";
+                return;
+            }
+
             const btn = document.getElementById('btnConvert');
             const format = document.getElementById('formatSelect').value;
-            const isBatch = document.getElementById('batchMode').checked;
             
-            btn.innerHTML = '⏳ Processando...'; btn.disabled = true; setStatus("");
+            btn.innerHTML = '⏳ Enviando e Convertendo...';
+            btn.disabled = true;
+            statusDiv.innerHTML = "";
 
             const formData = new FormData();
-            for (let i = 0; i < selectedFiles.length; i++) formData.append("files", selectedFiles[i]);
+            
+            // Adiciona arquivos ao FormData
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const path = file.webkitRelativePath || file.name;
+                formData.append("files", file, path);
+            }
             formData.append("target_format", format);
-            formData.append("batch_mode", isBatch); // Envia o estado do checkbox
 
             try {
-                const response = await fetch("/", { method: "POST", body: formData });
+                const response = await fetch("/", {
+                    method: "POST",
+                    body: formData
+                });
+
                 if (response.ok) {
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url;
-                    
-                    // Se for Batch, sempre baixa ZIP. Se não, depende do formato.
-                    let ext = (format === 'shp' || isBatch) ? 'zip' : format;
-                    let prefix = isBatch ? 'Lote_Convertido' : 'Resultado_Unico';
-                    
-                    a.download = `${prefix}.${ext}`;
-                    document.body.appendChild(a); a.click(); a.remove();
-                    setStatus("✅ Arquivo pronto!", "success");
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "Resultado_GeoConversor.zip";
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    statusDiv.innerHTML = "<span class='success'>✅ Sucesso! Download iniciado.</span>";
                 } else {
-                    const errText = await response.text(); setStatus("Erro: " + errText, "error");
+                    const errorText = await response.text();
+                    // Detecta erro 413 (Arquivo muito grande)
+                    if (response.status === 413 || errorText.includes("Too Large")) {
+                        statusDiv.innerHTML = "<span class='error'>❌ Erro: Arquivos muito grandes para este servidor/proxy. Tente enviar menos arquivos por vez.</span>";
+                    } else {
+                        statusDiv.innerHTML = `<span class='error'>❌ Erro no servidor: ${errorText}</span>`;
+                    }
                 }
-            } catch (error) { setStatus("Erro de conexão.", "error"); }
-            btn.innerHTML = 'Converter'; btn.disabled = false;
+            } catch (error) {
+                statusDiv.innerHTML = `<span class='error'>❌ Erro de conexão: ${error.message}</span>`;
+            }
+
+            btn.innerHTML = 'Iniciar Conversão';
+            btn.disabled = false;
         }
-        function setStatus(msg, type) { const el = document.getElementById('status'); el.innerText = msg; el.className = "status " + type; }
+        
+        console.log("GeoConversor V11 JS Carregado com Sucesso!");
     </script>
 </body>
 </html>
@@ -155,156 +210,166 @@ class GeoHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML_CONTENT.encode('utf-8'))
-        else: super().do_GET()
+        else:
+            super().do_GET()
 
     def do_POST(self):
-        if not HAS_GEOPANDAS: self.send_error(500, "Falta Geopandas"); return
-        
+        if not HAS_GEOPANDAS:
+            self.send_error(500, "Geopandas nao instalado no servidor.")
+            return
+
         try:
-            form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': self.headers['Content-Type']})
+            # Tenta processar o upload
+            # Se for muito grande e houver um proxy (Nginx), isso nem será executado, cairá no erro 413 antes.
+            form = cgi.FieldStorage(
+                fp=self.rfile, 
+                headers=self.headers, 
+                environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': self.headers['Content-Type']}
+            )
             
             with tempfile.TemporaryDirectory() as tmp_dir:
-                # 1. RECEBER DADOS
-                if 'files' not in form: raise Exception("Sem arquivos")
+                if 'files' not in form: raise Exception("Nenhum arquivo recebido pelo servidor.")
+                
                 uploaded_files = form['files']
                 if not isinstance(uploaded_files, list): uploaded_files = [uploaded_files]
                 
                 target_format = form.getvalue('target_format')
-                batch_mode = form.getvalue('batch_mode') == 'true' # Verifica checkbox
                 
-                # Lista para guardar os caminhos dos arquivos de entrada válidos
-                input_maps = []
+                input_root = os.path.join(tmp_dir, "INPUT")
+                output_root = os.path.join(tmp_dir, "OUTPUT")
+                os.makedirs(input_root, exist_ok=True)
+                os.makedirs(output_root, exist_ok=True)
 
-                # Salvar arquivos no disco temporário
+                print(f"--> Recebendo {len(uploaded_files)} arquivos...")
+
+                # 1. Salvar arquivos mantendo estrutura de pastas
                 for file_item in uploaded_files:
                     if file_item.filename:
-                        fname = os.path.basename(file_item.filename)
-                        save_path = os.path.join(tmp_dir, fname)
-                        with open(save_path, 'wb') as f: f.write(file_item.file.read())
+                        # Limpa barras iniciais para evitar erro de path absoluto
+                        safe_name = file_item.filename.lstrip("/").lstrip("\\")
+                        save_path = os.path.join(input_root, safe_name)
                         
-                        # Detecta arquivos processáveis
-                        if fname.lower().endswith(('.shp', '.kml', '.geojson', '.json', '.gpkg')):
-                            input_maps.append(save_path)
-                        elif fname.lower().endswith('.zip'):
-                            # Se for zip, extrai e procura dentro
-                            extract_path = os.path.join(tmp_dir, "ext_" + fname)
-                            os.makedirs(extract_path, exist_ok=True)
-                            with zipfile.ZipFile(save_path, 'r') as z:
-                                z.extractall(extract_path)
-                                for root, dirs, files in os.walk(extract_path):
-                                    for zf in files:
-                                        if zf.lower().endswith('.shp'):
-                                            input_maps.append(os.path.join(root, zf))
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                        with open(save_path, 'wb') as f:
+                            f.write(file_item.file.read())
 
-                if not input_maps: raise Exception("Nenhum mapa válido encontrado nos uploads.")
+                files_processed = 0
 
-                # 2. PROCESSAMENTO (BATCH vs UNIFICADO)
-                
-                final_download_path = ""
-                mime = "application/octet-stream"
+                # 2. Varrer e Converter
+                for root, dirs, files in os.walk(input_root):
+                    for f in files:
+                        f_lower = f.lower()
+                        input_path = os.path.join(root, f)
+                        
+                        # Calcula onde salvar no OUTPUT (Espelhamento)
+                        rel_path = os.path.relpath(root, input_root)
+                        target_dir = os.path.join(output_root, rel_path)
+                        os.makedirs(target_dir, exist_ok=True)
+                        
+                        base_name = os.path.splitext(f)[0]
 
-                # FUNÇÃO AUXILIAR DE CONVERSÃO
-                def convert_gdf(gdf, fmt, path_out):
-                    if fmt == 'csv':
-                        df = pd.DataFrame(gdf.drop(columns='geometry', errors='ignore'))
-                        df.to_csv(path_out + ".csv", sep=';', encoding='utf-8-sig', index=False)
-                        return path_out + ".csv"
-                    elif fmt == 'dxf':
-                        gdf[['geometry']].to_file(path_out + ".dxf", driver='DXF')
-                        return path_out + ".dxf"
-                    elif fmt == 'kml':
-                        if gdf.crs != "EPSG:4326": gdf = gdf.to_crs("EPSG:4326")
-                        gdf.to_file(path_out + ".kml", driver='KML')
-                        return path_out + ".kml"
-                    elif fmt == 'geojson':
-                        if gdf.crs != "EPSG:4326": gdf = gdf.to_crs("EPSG:4326")
-                        gdf.to_file(path_out + ".geojson", driver='GeoJSON')
-                        return path_out + ".geojson"
-                    elif fmt == 'shp':
-                        os.makedirs(path_out, exist_ok=True)
-                        gdf.columns = [c[:10] for c in gdf.columns] # Fix colunas
-                        gdf = gdf.loc[:,~gdf.columns.duplicated()]
-                        for col in gdf.columns:
-                            if gdf[col].dtype == 'datetime64[ns]': gdf[col] = gdf[col].astype(str)
-                        gdf.to_file(os.path.join(path_out, os.path.basename(path_out) + ".shp"))
-                        # Zipar o shapefile resultante
-                        sh_zip = path_out + ".zip"
-                        with zipfile.ZipFile(sh_zip, 'w') as zf:
-                            for root, dirs, files in os.walk(path_out):
-                                for f in files: zf.write(os.path.join(root, f), f)
-                        return sh_zip
+                        if f_lower.endswith('.shp'):
+                            try:
+                                self.convert_layer(input_path, None, target_format, target_dir, base_name)
+                                files_processed += 1
+                            except Exception as e: print(f"Erro SHP {f}: {e}")
+                        
+                        elif f_lower.endswith('.mdb'):
+                            try:
+                                # Cria pasta para o MDB
+                                mdb_out_dir = os.path.join(target_dir, base_name)
+                                os.makedirs(mdb_out_dir, exist_ok=True)
+                                
+                                layers = fiona.listlayers(input_path)
+                                for lyr in layers:
+                                    try:
+                                        self.convert_layer(input_path, lyr, target_format, mdb_out_dir, lyr)
+                                    except: pass
+                                files_processed += 1
+                            except Exception as e: print(f"Erro MDB {f}: {e}")
 
-                if batch_mode:
-                    # --- MODO LOTE (VARIOS ARQUIVOS) ---
-                    output_folder = os.path.join(tmp_dir, "batch_output")
-                    os.makedirs(output_folder, exist_ok=True)
-                    
-                    for map_file in input_maps:
-                        try:
-                            gdf = gpd.read_file(map_file)
-                            name_no_ext = os.path.splitext(os.path.basename(map_file))[0]
-                            out_base = os.path.join(output_folder, name_no_ext)
-                            
-                            # Converte e salva na pasta de saida
-                            convert_gdf(gdf, target_format, out_base)
-                        except Exception as e:
-                            print(f"Erro ao converter {map_file}: {e}")
+                if files_processed == 0:
+                    raise Exception("Nenhum arquivo válido (.shp ou .mdb) foi processado.")
 
-                    # Zipar a pasta inteira de resultados
-                    final_download_path = os.path.join(tmp_dir, "Lote_Completo.zip")
-                    with zipfile.ZipFile(final_download_path, 'w') as zf:
-                        for root, dirs, files in os.walk(output_folder):
-                            for file in files:
-                                # Evita estrutura de pastas profunda no zip
-                                arcname = os.path.basename(file)
-                                zf.write(os.path.join(root, file), arcname)
-                    mime = "application/zip"
+                # 3. Zipar Resultado
+                zip_path = os.path.join(tmp_dir, "Download.zip")
+                with zipfile.ZipFile(zip_path, 'w') as zf:
+                    for root, dirs, files in os.walk(output_root):
+                        for file in files:
+                            full_path = os.path.join(root, file)
+                            rel_name = os.path.relpath(full_path, output_root)
+                            zf.write(full_path, rel_name)
 
-                else:
-                    # --- MODO UNIFICADO (MERGE) ---
-                    # Lê todos e junta em um só
-                    gdfs = []
-                    for map_file in input_maps:
-                        try:
-                            gdfs.append(gpd.read_file(map_file))
-                        except: pass
-                    
-                    if not gdfs: raise Exception("Falha ao ler arquivos.")
-                    
-                    # Concatena (Junta as tabelas)
-                    full_gdf = pd.concat(gdfs, ignore_index=True)
-                    
-                    out_base = os.path.join(tmp_dir, "resultado_unificado")
-                    res_file = convert_gdf(full_gdf, target_format, out_base)
-                    
-                    final_download_path = res_file
-                    
-                    # Definir mime types
-                    if target_format == 'csv': mime = "text/csv"
-                    elif target_format == 'dxf': mime = "application/dxf"
-                    elif target_format == 'kml': mime = "application/vnd.google-earth.kml+xml"
-                    elif target_format == 'geojson': mime = "application/json"
-                    elif target_format == 'shp': mime = "application/zip"
-
-                # 3. ENVIAR RESPOSTA
-                with open(final_download_path, 'rb') as f:
+                # 4. Enviar
+                with open(zip_path, 'rb') as f:
                     self.send_response(200)
-                    self.send_header("Content-type", mime)
-                    self.send_header("Content-Disposition", f'attachment; filename="{os.path.basename(final_download_path)}"')
+                    self.send_header("Content-type", "application/zip")
+                    self.send_header("Content-Disposition", f'attachment; filename="Geo_Convertido_V11.zip"')
                     self.end_headers()
                     self.wfile.write(f.read())
 
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(f"Erro no servidor: {str(e)}".encode('utf-8'))
+            self.wfile.write(f"Erro Interno: {str(e)}".encode('utf-8'))
+
+    def convert_layer(self, src_path, layer, fmt, dst_folder, out_name):
+        # Leitura
+        if layer: gdf = gpd.read_file(src_path, layer=layer)
+        else: gdf = gpd.read_file(src_path)
+
+        # Limpeza e Filtro Anti-Limbo (10 Bilhões)
+        if hasattr(gdf.geometry, 'make_valid'): gdf['geometry'] = gdf.geometry.make_valid()
+        # Explode opcional (pode pesar muito em MDBs grandes, descomente se necessário)
+        # try: gdf = gdf.explode(index_parts=True).reset_index(drop=True)
+        # except: pass
+        
+        # Filtro de Coordenadas
+        LIMITE = 1e10
+        b = gdf.bounds
+        mask = ((b['minx'] > -LIMITE) & (b['miny'] > -LIMITE) & (b['maxx'] < LIMITE) & (b['maxy'] < LIMITE))
+        mask = mask & b['minx'].notna()
+        gdf = gdf[mask]
+
+        if len(gdf) == 0: return
+
+        out_path = os.path.join(dst_folder, out_name)
+
+        if fmt == 'dxf':
+            gdf[['geometry']].to_file(out_path + ".dxf", driver='DXF')
+        elif fmt == 'shp':
+            # Fix colunas < 10 chars e datas
+            gdf.columns = [c[:10] for c in gdf.columns]
+            gdf = gdf.loc[:,~gdf.columns.duplicated()]
+            for col in gdf.columns:
+                if gdf[col].dtype == 'datetime64[ns]': gdf[col] = gdf[col].astype(str)
+            gdf.to_file(out_path + ".shp")
+        elif fmt == 'xlsx':
+            try:
+                df = pd.DataFrame(gdf.drop(columns='geometry', errors='ignore'))
+                for col in df.select_dtypes(include=['datetime64[ns, UTC]', 'datetime64[ns]']).columns:
+                    df[col] = df[col].astype(str)
+                df.to_excel(out_path + ".xlsx", index=False)
+            except: pass
+        elif fmt == 'csv':
+            df = pd.DataFrame(gdf.drop(columns='geometry', errors='ignore'))
+            df.to_csv(out_path + ".csv", sep=';', encoding='utf-8-sig', index=False)
+        elif fmt == 'kml':
+            if gdf.crs != "EPSG:4326": gdf = gdf.to_crs("EPSG:4326")
+            gdf.to_file(out_path + ".kml", driver='KML')
+        elif fmt == 'geojson':
+            if gdf.crs != "EPSG:4326": gdf = gdf.to_crs("EPSG:4326")
+            gdf.to_file(out_path + ".geojson", driver='GeoJSON')
+        elif fmt == 'gpkg':
+            gdf.to_file(out_path + ".gpkg", driver='GPKG', layer=out_name)
 
 if __name__ == "__main__":
     def open_browser(): time.sleep(1); webbrowser.open(f"http://localhost:{PORT}")
     if HAS_GEOPANDAS:
         threading.Thread(target=open_browser).start()
-        print(f"✅ GEO V6 (BATCH) RODANDO! Acesse: http://localhost:{PORT}")
-        with socketserver.TCPServer(("", PORT), GeoHandler) as httpd:
+        print(f"✅ GEO V11 RODANDO! Acesse: http://localhost:{PORT}")
+        # Usa ThreadingTCPServer para não travar em múltiplos requests
+        with socketserver.ThreadingTCPServer(("", PORT), GeoHandler) as httpd:
             try: httpd.serve_forever()
             except KeyboardInterrupt: pass
     else: print("Instale Geopandas!")
